@@ -166,7 +166,7 @@ F: F+F-F-F+F+F+F-F
     const scriptParam = urlParams.get('script')
     if (scriptParam) {
       try {
-        textarea.value = decodeURIComponent(atob(scriptParam))
+        textarea.value = decodeURIComponent(escape(atob(scriptParam)))
       } catch (e) {
         textarea.value = DEFAULT_SCRIPT
       }
@@ -202,7 +202,7 @@ F: F+F-F-F+F+F+F-F
 
     document.getElementById('btn-copy-link').addEventListener('click', () => {
       const encoded = btoa(unescape(encodeURIComponent(textarea.value)))
-      const url = `https://wrcstewart.github.io/butterflydreaming_helix_1/?script=${encoded}`
+      const url = `https://wrcstewart.github.io/butterflydreaming_helix_1/?script=${encodeURIComponent(encoded)}`
       navigator.clipboard.writeText(url).then(() => {
         const btn = document.getElementById('btn-copy-link')
         btn.textContent = 'Link Copied ✓'
