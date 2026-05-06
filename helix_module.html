@@ -251,8 +251,9 @@
     <div class="ctrl">
       <label>CAM RADIUS</label>
       <div class="ctrl-row">
-        <input type="range" id="sl-camera-radius" min="0" max="50" step="0.5" value="0">
-        <span class="val" id="val-camera-radius">0.0</span>
+        <!-- logarithmic: slider position = log10(radius), range 0..6, default 3 = 1000 units -->
+        <input type="range" id="sl-camera-radius" min="0" max="6" step="0.05" value="3">
+        <span class="val" id="val-camera-radius">1000</span>
       </div>
     </div>
     <div class="ctrl">
@@ -274,10 +275,20 @@
   let lsystemString = ''
   let storedScore   = ''
   let totalZRise    = 1
-  let tiltAngle     = 0
-  let isDragging    = false
-  let lastDragX     = 0
-  let lastDragY     = 0
+
+  // Orbit camera state
+  let orbitTheta  = 0              // azimuthal angle (horizontal)
+  let orbitPhi    = Math.PI / 4    // polar angle (0 = top, π = bottom); 45° elevation
+  let orbitRadius = 1000           // distance from panTarget
+  const panTarget = new THREE.Vector3()
+
+  // Drag state
+  let isDragging       = false
+  let dragMode         = null      // 'orbit' | 'pan'
+  let lastDragX        = 0
+  let lastDragY        = 0
+  let lastPinchDist    = 0
+  const lastPinchCtr   = { x: 0, y: 0 }
 
   function defaultParams() {
     return {
@@ -285,7 +296,7 @@
       verticalStep: 0.15, tubeRadius: 0.05, tubeSegments: 6,
       symmetry: 8, colourSpeed: 4, saturation: 100, lightness: 65,
       background: '#0a0a0f',
-      cameraHeight: 0.5, cameraRadius: 0.0, rotationSpeed: 0.3,
+      cameraHeight: 0.5, cameraRadius: 1000, rotationSpeed: 0.3,
       stackMode: 'stack'
     }
   }
@@ -300,7 +311,7 @@
   const camera = new THREE.PerspectiveCamera(
     60,
     container.clientWidth / Math.max(container.clientHeight, 1),
-    0.1, 100000
+    0.1, 1e8
   )
 
   const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -534,55 +545,138 @@
   }
 
   // ── Camera ────────────────────────────────────────────────────────────────────
+  // Spherical orbit around panTarget. near/far scale with orbitRadius to
+  // maintain depth-buffer precision across the full range of structure sizes.
   function updateCamera() {
-    const totalH = params.stackMode === 'stack'
-      ? params.symmetry * totalZRise
-      : totalZRise
-    const safeH = totalH || 1
-
-    const camZ = params.cameraHeight * safeH
-    camera.position.set(params.cameraRadius, 0, camZ)
-
-    const lookDist = Math.max(safeH * 5, 1000)
-    const lookX    = params.cameraRadius + Math.cos(tiltAngle) * lookDist
-    const lookZ    = camZ + Math.sin(tiltAngle) * lookDist
-    camera.lookAt(lookX, 0, lookZ)
+    camera.position.set(
+      panTarget.x + orbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta),
+      panTarget.y + orbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta),
+      panTarget.z + orbitRadius * Math.cos(orbitPhi)
+    )
+    camera.near = Math.max(0.1, orbitRadius * 0.001)
+    camera.far  = orbitRadius * 200 + 1e6
+    camera.lookAt(panTarget)
     camera.updateProjectionMatrix()
   }
 
-  // ── Mouse / touch tilt ────────────────────────────────────────────────────────
+  // Auto-fit camera to the bounding sphere of the rendered helix (called on BD_INIT).
+  function autoFitCamera() {
+    const box = new THREE.Box3().setFromObject(helixGroup)
+    if (box.isEmpty()) return
+    const sphere = new THREE.Sphere()
+    box.getBoundingSphere(sphere)
+    panTarget.copy(sphere.center)
+    orbitRadius     = sphere.radius * 2.5
+    orbitPhi        = Math.PI / 4   // 45° elevation: outside and above
+    orbitTheta      = 0
+    params.cameraRadius = orbitRadius
+    syncSlidersFromParams()
+  }
+
+  // ── Orbit controls ────────────────────────────────────────────────────────────
+  // Left drag  — orbit (full sphere, no clamping except singularity at poles)
+  // Right drag — pan (move the look-at target in screen space)
+  // Scroll     — zoom (adjust orbit radius logarithmically)
+  // Two-finger — pinch to zoom + centroid drag to pan
   const cvs = renderer.domElement
-  // Drag: vertical = tilt camera, horizontal = spin helixGroup (supplements auto-rotation)
-  cvs.addEventListener('mousedown', e => { isDragging = true; lastDragX = e.clientX; lastDragY = e.clientY })
+
+  function panBy(dx, dy) {
+    const dir   = new THREE.Vector3()
+    camera.getWorldDirection(dir)
+    const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize()
+    const up    = new THREE.Vector3().crossVectors(right, dir).normalize()
+    const scale = orbitRadius * 0.0015
+    panTarget.addScaledVector(right, -dx * scale)
+    panTarget.addScaledVector(up,     dy * scale)
+  }
+
+  // Mouse
+  cvs.addEventListener('mousedown', e => {
+    isDragging = true
+    dragMode   = e.button === 2 ? 'pan' : 'orbit'
+    lastDragX  = e.clientX
+    lastDragY  = e.clientY
+    e.preventDefault()
+  })
+  cvs.addEventListener('contextmenu', e => e.preventDefault())
+
   window.addEventListener('mousemove', e => {
     if (!isDragging) return
     const dx = e.clientX - lastDragX
     const dy = e.clientY - lastDragY
-    tiltAngle          -= dy * 0.005
-    tiltAngle           = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
-    helixGroup.rotation.z += dx * 0.005
+    if (dragMode === 'orbit') {
+      orbitTheta -= dx * 0.005
+      orbitPhi   -= dy * 0.005
+      orbitPhi    = Math.max(0.001, Math.min(Math.PI - 0.001, orbitPhi))
+    } else {
+      panBy(dx, dy)
+    }
     lastDragX = e.clientX
     lastDragY = e.clientY
     updateCamera()
   })
-  window.addEventListener('mouseup', () => { isDragging = false })
+  window.addEventListener('mouseup', () => { isDragging = false; dragMode = null })
+
+  // Scroll wheel zoom
+  cvs.addEventListener('wheel', e => {
+    e.preventDefault()
+    orbitRadius *= e.deltaY > 0 ? 1.12 : 0.89
+    orbitRadius  = Math.max(0.1, orbitRadius)
+    params.cameraRadius = orbitRadius
+    updateDisplayValues()
+    updateCamera()
+  }, { passive: false })
+
+  // Touch
   cvs.addEventListener('touchstart', e => {
+    e.preventDefault()
     isDragging = true
-    lastDragX  = e.touches[0].clientX
-    lastDragY  = e.touches[0].clientY
-  }, { passive: true })
+    if (e.touches.length === 1) {
+      dragMode  = 'orbit'
+      lastDragX = e.touches[0].clientX
+      lastDragY = e.touches[0].clientY
+    } else if (e.touches.length === 2) {
+      dragMode      = 'pinch'
+      lastPinchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )
+      lastPinchCtr.x = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      lastPinchCtr.y = (e.touches[0].clientY + e.touches[1].clientY) / 2
+    }
+  }, { passive: false })
+
   window.addEventListener('touchmove', e => {
     if (!isDragging) return
-    const dx = e.touches[0].clientX - lastDragX
-    const dy = e.touches[0].clientY - lastDragY
-    tiltAngle          -= dy * 0.005
-    tiltAngle           = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
-    helixGroup.rotation.z += dx * 0.005
-    lastDragX = e.touches[0].clientX
-    lastDragY = e.touches[0].clientY
-    updateCamera()
-  }, { passive: true })
-  window.addEventListener('touchend', () => { isDragging = false })
+    e.preventDefault()
+    if (dragMode === 'orbit' && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - lastDragX
+      const dy = e.touches[0].clientY - lastDragY
+      orbitTheta -= dx * 0.005
+      orbitPhi   -= dy * 0.005
+      orbitPhi    = Math.max(0.001, Math.min(Math.PI - 0.001, orbitPhi))
+      lastDragX   = e.touches[0].clientX
+      lastDragY   = e.touches[0].clientY
+      updateCamera()
+    } else if (dragMode === 'pinch' && e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      )
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2
+      orbitRadius   *= lastPinchDist / dist
+      orbitRadius    = Math.max(0.1, orbitRadius)
+      params.cameraRadius = orbitRadius
+      panBy(cx - lastPinchCtr.x, cy - lastPinchCtr.y)
+      lastPinchDist  = dist
+      lastPinchCtr.x = cx
+      lastPinchCtr.y = cy
+      updateCamera()
+    }
+  }, { passive: false })
+
+  window.addEventListener('touchend', () => { isDragging = false; dragMode = null })
 
   // ── WebXR ─────────────────────────────────────────────────────────────────────
   const xrButton = document.getElementById('xr-button')
@@ -619,7 +713,7 @@
     if (d.lightness      !== undefined) params.lightness     = Math.min(100, Math.max(0,    parseFloat(d.lightness)))
     if (d.background     !== undefined) params.background    = d.background
     if (d.camera_height  !== undefined) params.cameraHeight  = Math.min(1.0, Math.max(0.0,  parseFloat(d.camera_height)))
-    if (d.camera_radius  !== undefined) params.cameraRadius  = Math.min(50,  Math.max(0.0,  parseFloat(d.camera_radius)))
+    if (d.camera_radius  !== undefined) params.cameraRadius  = Math.max(0.1, parseFloat(d.camera_radius))
     if (d.rotation_speed !== undefined) params.rotationSpeed = Math.min(2.0, Math.max(0.0,  parseFloat(d.rotation_speed)))
     if (d.stack_mode     !== undefined) params.stackMode     = d.stack_mode === 'reset' ? 'reset' : 'stack'
   }
@@ -639,7 +733,7 @@
     document.getElementById('sl-saturation').value     = params.saturation
     document.getElementById('sl-lightness').value      = params.lightness
     document.getElementById('sl-camera-height').value  = params.cameraHeight
-    document.getElementById('sl-camera-radius').value  = params.cameraRadius
+    document.getElementById('sl-camera-radius').value  = Math.log10(Math.max(0.1, params.cameraRadius))
     document.getElementById('sl-rotation-speed').value = params.rotationSpeed
     updateDisplayValues()
   }
@@ -657,7 +751,7 @@
     document.getElementById('val-saturation').textContent     = params.saturation
     document.getElementById('val-lightness').textContent      = params.lightness
     document.getElementById('val-camera-height').textContent  = params.cameraHeight.toFixed(2)
-    document.getElementById('val-camera-radius').textContent  = params.cameraRadius.toFixed(1)
+    document.getElementById('val-camera-radius').textContent  = Math.round(params.cameraRadius)
     document.getElementById('val-rotation-speed').textContent = params.rotationSpeed.toFixed(1)
   }
 
@@ -681,8 +775,20 @@
   wire('sl-lightness',     'input',  v => { params.lightness    = parseFloat(v);              runRender() })
 
   // Camera-only controls (no geometry rebuild needed)
-  wire('sl-camera-height', 'input', v => { params.cameraHeight  = parseFloat(v); updateDisplayValues(); updateCamera() })
-  wire('sl-camera-radius', 'input', v => { params.cameraRadius  = parseFloat(v); updateDisplayValues(); updateCamera() })
+  wire('sl-camera-height', 'input', v => {
+    params.cameraHeight = parseFloat(v)
+    // Move the look-at target up/down the structure
+    const totalH = params.stackMode === 'stack' ? params.symmetry * totalZRise : totalZRise
+    panTarget.z  = params.cameraHeight * (totalH || 1)
+    updateDisplayValues()
+    updateCamera()
+  })
+  wire('sl-camera-radius', 'input', v => {
+    orbitRadius         = Math.pow(10, parseFloat(v))
+    params.cameraRadius = orbitRadius
+    updateDisplayValues()
+    updateCamera()
+  })
 
   // Rotation speed is read live by the animation loop — no rebuild needed
   wire('sl-rotation-speed', 'input', v => { params.rotationSpeed = parseFloat(v); updateDisplayValues() })
@@ -740,6 +846,8 @@
 
       statusEl.textContent = 'Rendering…'
       buildHelix()
+      autoFitCamera()
+      updateCamera()
       statusEl.textContent = 'Ready'
     } catch (e) {
       postError('Render error: ' + e.message)
@@ -766,7 +874,7 @@
       `%%bd_lightness ${params.lightness}`,
       `%%bd_background ${params.background}`,
       `%%bd_camera_height ${params.cameraHeight.toFixed(2)}`,
-      `%%bd_camera_radius ${params.cameraRadius.toFixed(1)}`,
+      `%%bd_camera_radius ${Math.round(orbitRadius)}`,
       `%%bd_rotation_speed ${params.rotationSpeed.toFixed(1)}`,
       `%%bd_stack_mode ${params.stackMode}`,
       storedScore ? `%%bd_score [\n${storedScore}\n%%bd_]` : ''
