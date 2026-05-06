@@ -251,7 +251,7 @@
     <div class="ctrl">
       <label>CAM RADIUS</label>
       <div class="ctrl-row">
-        <input type="range" id="sl-camera-radius" min="0" max="10" step="0.1" value="0">
+        <input type="range" id="sl-camera-radius" min="0" max="50" step="0.5" value="0">
         <span class="val" id="val-camera-radius">0.0</span>
       </div>
     </div>
@@ -276,6 +276,7 @@
   let totalZRise    = 1
   let tiltAngle     = 0
   let isDragging    = false
+  let lastDragX     = 0
   let lastDragY     = 0
 
   function defaultParams() {
@@ -551,21 +552,34 @@
 
   // ── Mouse / touch tilt ────────────────────────────────────────────────────────
   const cvs = renderer.domElement
-  cvs.addEventListener('mousedown',  e => { isDragging = true; lastDragY = e.clientY })
+  // Drag: vertical = tilt camera, horizontal = spin helixGroup (supplements auto-rotation)
+  cvs.addEventListener('mousedown', e => { isDragging = true; lastDragX = e.clientX; lastDragY = e.clientY })
   window.addEventListener('mousemove', e => {
     if (!isDragging) return
-    tiltAngle -= (e.clientY - lastDragY) * 0.005
-    tiltAngle  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
-    lastDragY  = e.clientY
+    const dx = e.clientX - lastDragX
+    const dy = e.clientY - lastDragY
+    tiltAngle          -= dy * 0.005
+    tiltAngle           = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
+    helixGroup.rotation.z += dx * 0.005
+    lastDragX = e.clientX
+    lastDragY = e.clientY
     updateCamera()
   })
-  window.addEventListener('mouseup',   () => { isDragging = false })
-  cvs.addEventListener('touchstart', e => { isDragging = true; lastDragY = e.touches[0].clientY }, { passive: true })
+  window.addEventListener('mouseup', () => { isDragging = false })
+  cvs.addEventListener('touchstart', e => {
+    isDragging = true
+    lastDragX  = e.touches[0].clientX
+    lastDragY  = e.touches[0].clientY
+  }, { passive: true })
   window.addEventListener('touchmove', e => {
     if (!isDragging) return
-    tiltAngle -= (e.touches[0].clientY - lastDragY) * 0.005
-    tiltAngle  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
-    lastDragY  = e.touches[0].clientY
+    const dx = e.touches[0].clientX - lastDragX
+    const dy = e.touches[0].clientY - lastDragY
+    tiltAngle          -= dy * 0.005
+    tiltAngle           = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
+    helixGroup.rotation.z += dx * 0.005
+    lastDragX = e.touches[0].clientX
+    lastDragY = e.touches[0].clientY
     updateCamera()
   }, { passive: true })
   window.addEventListener('touchend', () => { isDragging = false })
@@ -605,7 +619,7 @@
     if (d.lightness      !== undefined) params.lightness     = Math.min(100, Math.max(0,    parseFloat(d.lightness)))
     if (d.background     !== undefined) params.background    = d.background
     if (d.camera_height  !== undefined) params.cameraHeight  = Math.min(1.0, Math.max(0.0,  parseFloat(d.camera_height)))
-    if (d.camera_radius  !== undefined) params.cameraRadius  = Math.min(10,  Math.max(0.0,  parseFloat(d.camera_radius)))
+    if (d.camera_radius  !== undefined) params.cameraRadius  = Math.min(50,  Math.max(0.0,  parseFloat(d.camera_radius)))
     if (d.rotation_speed !== undefined) params.rotationSpeed = Math.min(2.0, Math.max(0.0,  parseFloat(d.rotation_speed)))
     if (d.stack_mode     !== undefined) params.stackMode     = d.stack_mode === 'reset' ? 'reset' : 'stack'
   }
