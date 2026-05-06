@@ -1,0 +1,800 @@
+<!-- ButterflyDreaming Helix Module — helix_module.html — BD Protocol v0.1 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Helix Module</title>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lindenmayer/dist/lindenmayer.browser.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #0a0a0f;
+      color: #e8e8e0;
+      font-family: Georgia, serif;
+    }
+
+    /* ── Top bar ── */
+    #top-bar {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 8px;
+      background: rgba(10,10,15,0.97);
+      border-bottom: 1px solid rgba(74,155,142,0.2);
+      min-height: 26px;
+    }
+    #status {
+      font-size: 0.68rem;
+      color: rgba(232,232,224,0.55);
+    }
+    #xr-button {
+      background: #0f0f18;
+      color: #4a9b8e;
+      border: 1px solid rgba(74,155,142,0.4);
+      padding: 2px 10px;
+      font-family: Georgia, serif;
+      font-size: 0.65rem;
+      cursor: pointer;
+      opacity: 0.35;
+    }
+    #xr-button:not(:disabled) { opacity: 1; }
+    #xr-button:not(:disabled):hover { background: rgba(74,155,142,0.1); }
+
+    /* ── Canvas fills remaining space ── */
+    #canvas-container {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    #canvas-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Controls panel ── */
+    #controls {
+      flex-shrink: 0;
+      background: rgba(10,10,15,0.97);
+      border-top: 1px solid rgba(74,155,142,0.2);
+      padding: 5px 8px 6px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 3px 10px;
+    }
+
+    .ctrl {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .ctrl label {
+      font-size: 0.55rem;
+      letter-spacing: 0.07em;
+      color: rgba(232,232,224,0.45);
+      white-space: nowrap;
+    }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .ctrl-row input[type=range] {
+      flex: 1;
+      min-width: 0;
+      height: 2px;
+      cursor: pointer;
+      accent-color: #4a9b8e;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(74,155,142,0.25);
+      outline: none;
+      border-radius: 1px;
+    }
+    .ctrl-row input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #4a9b8e;
+      cursor: pointer;
+    }
+    .ctrl-row select {
+      flex: 1;
+      background: #0f0f18;
+      color: #4a9b8e;
+      border: 1px solid rgba(74,155,142,0.35);
+      font-size: 0.62rem;
+      padding: 1px 2px;
+      cursor: pointer;
+      outline: none;
+      min-width: 0;
+    }
+    .val {
+      font-size: 0.62rem;
+      color: #4a9b8e;
+      min-width: 30px;
+      text-align: right;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="top-bar">
+    <span id="status">Initialising…</span>
+    <button id="xr-button" disabled>Enter VR</button>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <div id="controls">
+    <!-- Row 1 -->
+    <div class="ctrl">
+      <label>DEPTH</label>
+      <div class="ctrl-row">
+        <select id="sl-depth">
+          <option>1</option><option>2</option><option selected>3</option>
+          <option>4</option><option>5</option>
+        </select>
+        <span class="val" id="val-depth">3</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>SYMMETRY</label>
+      <div class="ctrl-row">
+        <select id="sl-symmetry">
+          <option>1</option><option>2</option><option>3</option><option>4</option>
+          <option>6</option><option selected>8</option><option>10</option>
+          <option>12</option><option>16</option>
+        </select>
+        <span class="val" id="val-symmetry">8</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>STACK MODE</label>
+      <div class="ctrl-row">
+        <select id="sl-stack-mode">
+          <option value="stack" selected>stack</option>
+          <option value="reset">reset</option>
+        </select>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>STEP</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-step" min="10" max="200" step="1" value="40">
+        <span class="val" id="val-step">40</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>ANGLE</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-angle" min="5" max="90" step="0.5" value="25">
+        <span class="val" id="val-angle">25°</span>
+      </div>
+    </div>
+
+    <!-- Row 2 -->
+    <div class="ctrl">
+      <label>ANGLE FINE</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-angle-minutes" min="0" max="59" step="1" value="0">
+        <span class="val" id="val-angle-minutes">0'</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>VERT STEP</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-vertical-step" min="0" max="1" step="0.01" value="0.15">
+        <span class="val" id="val-vertical-step">0.15</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>TUBE RADIUS</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-tube-radius" min="0.01" max="0.5" step="0.01" value="0.05">
+        <span class="val" id="val-tube-radius">0.05</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>TUBE SEGS</label>
+      <div class="ctrl-row">
+        <select id="sl-tube-segments">
+          <option>3</option><option>4</option><option>5</option>
+          <option selected>6</option><option>8</option><option>10</option><option>12</option>
+        </select>
+        <span class="val" id="val-tube-segments">6</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>COLOUR SPEED</label>
+      <div class="ctrl-row">
+        <!-- logarithmic: slider position = log2(speed), range -2..4, default 2 (speed=4) -->
+        <input type="range" id="sl-colour-speed" min="-2" max="4" step="0.1" value="2">
+        <span class="val" id="val-colour-speed">4.0×</span>
+      </div>
+    </div>
+
+    <!-- Row 3 -->
+    <div class="ctrl">
+      <label>SATURATION</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-saturation" min="0" max="100" step="1" value="100">
+        <span class="val" id="val-saturation">100</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>LIGHTNESS</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-lightness" min="0" max="100" step="1" value="65">
+        <span class="val" id="val-lightness">65</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>CAM HEIGHT</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-camera-height" min="0" max="1" step="0.01" value="0.5">
+        <span class="val" id="val-camera-height">0.50</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>CAM RADIUS</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-camera-radius" min="0" max="10" step="0.1" value="0">
+        <span class="val" id="val-camera-radius">0.0</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>ROT SPEED</label>
+      <div class="ctrl-row">
+        <input type="range" id="sl-rotation-speed" min="0" max="2" step="0.05" value="0.3">
+        <span class="val" id="val-rotation-speed">0.3</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ButterflyDreaming Helix Module — helix_module.html — BD Protocol v0.1
+  // Production postMessage origin should be tightened to 'https://butterflydreaming.info'
+  'use strict'
+
+  // ── State ────────────────────────────────────────────────────────────────────
+  let params        = defaultParams()
+  let lsystemString = ''
+  let storedScore   = ''
+  let totalZRise    = 1
+  let tiltAngle     = 0
+  let isDragging    = false
+  let lastDragY     = 0
+
+  function defaultParams() {
+    return {
+      depth: 3, step: 40, angle: 25, angleMinutes: 0,
+      verticalStep: 0.15, tubeRadius: 0.05, tubeSegments: 6,
+      symmetry: 8, colourSpeed: 4, saturation: 100, lightness: 65,
+      background: '#0a0a0f',
+      cameraHeight: 0.5, cameraRadius: 0.0, rotationSpeed: 0.3,
+      stackMode: 'stack'
+    }
+  }
+
+  // ── Three.js scene ────────────────────────────────────────────────────────────
+  const container  = document.getElementById('canvas-container')
+  const statusEl   = document.getElementById('status')
+  const scene      = new THREE.Scene()
+  const helixGroup = new THREE.Group()
+  scene.add(helixGroup)
+
+  const camera = new THREE.PerspectiveCamera(
+    60,
+    container.clientWidth / Math.max(container.clientHeight, 1),
+    0.1, 100000
+  )
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setSize(container.clientWidth, container.clientHeight)
+  renderer.xr.enabled = true
+  container.appendChild(renderer.domElement)
+
+  scene.background = new THREE.Color(params.background)
+
+  // ── Resize ────────────────────────────────────────────────────────────────────
+  window.addEventListener('resize', () => {
+    const w = container.clientWidth
+    const h = container.clientHeight
+    camera.aspect = w / Math.max(h, 1)
+    camera.updateProjectionMatrix()
+    renderer.setSize(w, h)
+  })
+
+  // ── Animation loop ────────────────────────────────────────────────────────────
+  const clock = new THREE.Clock()
+  renderer.setAnimationLoop(() => {
+    const delta = clock.getDelta()
+    helixGroup.rotation.z += (params.rotationSpeed * delta * Math.PI) / 180
+    renderer.render(scene, camera)
+  })
+
+  // ── BD Parser (verbatim from visual module) ───────────────────────────────────
+  function parseBD(text) {
+    const directives = {}
+    const lines = text.split('\n')
+    let state = 'text', currentDirective = null, currentLines = []
+    for (const line of lines) {
+      if (state === 'text') {
+        if (line.startsWith('%%bd_')) {
+          const spaceIdx = line.indexOf(' ')
+          if (spaceIdx === -1) continue
+          const name  = line.slice(5, spaceIdx)
+          const value = line.slice(spaceIdx + 1).trim()
+          if (value === '[') {
+            currentDirective = name; currentLines = []; state = 'bracket'
+          } else {
+            directives[name] = value
+          }
+        }
+      } else if (state === 'bracket') {
+        if (line.trim() === '%%bd_]') {
+          directives[currentDirective] = currentLines.join('\n'); state = 'text'
+        } else {
+          currentLines.push(line)
+        }
+      }
+    }
+    return directives
+  }
+
+  // ── Score Parser ──────────────────────────────────────────────────────────────
+  function parseScore(scoreText) {
+    const result = { axiom: '', productions: {} }
+    for (const line of scoreText.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      if (trimmed.startsWith('axiom:')) {
+        result.axiom = trimmed.slice(6).trim()
+      } else {
+        const ci = trimmed.indexOf(':')
+        if (ci !== -1) {
+          result.productions[trimmed.slice(0, ci).trim()] = trimmed.slice(ci + 1).trim()
+        }
+      }
+    }
+    return result
+  }
+
+  // ── Hue from cumulative angle ─────────────────────────────────────────────────
+  function computeHue(cumAngle, speed) {
+    const s = speed
+    return ((cumAngle % (360 * s)) + (360 * s)) % (360 * s) / s
+  }
+
+  // ── 3D Turtle ─────────────────────────────────────────────────────────────────
+  // Returns { segments: [{points, hues}], finalZ }
+  // Segments are broken at ] pops (branch exits). Shared geometry is used
+  // for symmetry stamps so we build once and reuse.
+  function runTurtle(lstr, p) {
+    const ea = p.angle + p.angleMinutes / 60   // effective angle in degrees
+    const dZ = p.verticalStep * p.step          // rise per F step
+
+    const allSegments = []
+    let curPts  = []
+    let curHues = []
+
+    let x = 0, y = 0, z = 0, angle = 0, cumAngle = 0
+    const stack = []
+
+    curPts.push(new THREE.Vector3(x, y, z))
+    curHues.push(computeHue(cumAngle, p.colourSpeed))
+
+    for (const sym of lstr) {
+      switch (sym) {
+        case 'F': {
+          const rad = (angle * Math.PI) / 180
+          x += Math.cos(rad) * p.step
+          y += Math.sin(rad) * p.step
+          z += dZ
+          curPts.push(new THREE.Vector3(x, y, z))
+          curHues.push(computeHue(cumAngle, p.colourSpeed))
+          break
+        }
+        case 'f': {
+          const rad = (angle * Math.PI) / 180
+          x += Math.cos(rad) * p.step
+          y += Math.sin(rad) * p.step
+          z += dZ
+          break
+        }
+        case '+': angle += ea; cumAngle += ea; break
+        case '-': angle -= ea; cumAngle -= ea; break
+        case '|': angle += 180; cumAngle += 180; break
+        case '[':
+          stack.push({ x, y, z, angle, cumAngle, pts: curPts, hues: curHues })
+          curPts  = [new THREE.Vector3(x, y, z)]
+          curHues = [computeHue(cumAngle, p.colourSpeed)]
+          break
+        case ']': {
+          if (curPts.length > 1) allSegments.push({ points: curPts, hues: curHues })
+          const s = stack.pop()
+          x = s.x; y = s.y; z = s.z; angle = s.angle; cumAngle = s.cumAngle
+          curPts = s.pts; curHues = s.hues
+          break
+        }
+      }
+    }
+    if (curPts.length > 1) allSegments.push({ points: curPts, hues: curHues })
+
+    return { segments: allSegments, finalZ: z }
+  }
+
+  // ── Build a tube mesh for one path segment ────────────────────────────────────
+  function buildTubeMesh(seg, p) {
+    const { points, hues } = seg
+
+    // Deduplicate adjacent identical points to avoid CatmullRomCurve3 NaN
+    const pts  = [points[0]]
+    const hArr = [hues[0]]
+    for (let i = 1; i < points.length; i++) {
+      if (points[i].distanceTo(points[i - 1]) > 0.001) {
+        pts.push(points[i])
+        hArr.push(hues[i])
+      }
+    }
+    if (pts.length < 2) return null
+
+    const curve          = new THREE.CatmullRomCurve3(pts)
+    const tubularSegs    = Math.min(pts.length - 1, 3000)
+    const actualRadius   = p.step * p.tubeRadius
+    const radialSegs     = p.tubeSegments
+
+    const geometry = new THREE.TubeGeometry(curve, tubularSegs, actualRadius, radialSegs, false)
+
+    // Assign vertex colours along the tube (u = position along tube, 0..1)
+    const posCount = geometry.attributes.position.count
+    const nTub     = geometry.parameters.tubularSegments
+    const nRad     = geometry.parameters.radialSegments
+    const colorBuf = new Float32Array(posCount * 3)
+    const nHues    = hArr.length
+    const col      = new THREE.Color()
+
+    for (let vi = 0; vi < posCount; vi++) {
+      const ring = Math.floor(vi / (nRad + 1))
+      const u    = nTub > 0 ? ring / nTub : 0
+      const pos  = u * (nHues - 1)
+      const lo   = Math.floor(pos)
+      const hi   = Math.min(lo + 1, nHues - 1)
+      const t    = pos - lo
+      const hue  = hArr[lo] * (1 - t) + hArr[hi] * t
+
+      col.setHSL(hue / 360, p.saturation / 100, p.lightness / 100)
+      colorBuf[vi * 3]     = col.r
+      colorBuf[vi * 3 + 1] = col.g
+      colorBuf[vi * 3 + 2] = col.b
+    }
+
+    geometry.setAttribute('color', new THREE.BufferAttribute(colorBuf, 3))
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })
+    return { geometry, material }
+  }
+
+  // ── Clear helixGroup, disposing shared geometry/material once each ─────────────
+  function clearHelixGroup() {
+    const seenGeo = new Set()
+    const seenMat = new Set()
+    helixGroup.traverse(obj => {
+      if (obj.isMesh) {
+        if (obj.geometry && !seenGeo.has(obj.geometry)) {
+          obj.geometry.dispose(); seenGeo.add(obj.geometry)
+        }
+        if (obj.material && !seenMat.has(obj.material)) {
+          obj.material.dispose(); seenMat.add(obj.material)
+        }
+      }
+    })
+    while (helixGroup.children.length) helixGroup.remove(helixGroup.children[0])
+  }
+
+  // ── Build and stamp the full helix ────────────────────────────────────────────
+  function buildHelix() {
+    clearHelixGroup()
+    if (!lsystemString) return
+
+    const { segments, finalZ } = runTurtle(lsystemString, params)
+    totalZRise = finalZ > 0 ? finalZ : 1
+
+    // Build base meshes once (geometry shared across stamps)
+    const baseMeshes = segments.map(s => buildTubeMesh(s, params)).filter(Boolean)
+    if (baseMeshes.length === 0) return
+
+    const n = params.symmetry
+    for (let i = 0; i < n; i++) {
+      const stamp = new THREE.Group()
+      stamp.rotation.z = (2 * Math.PI / n) * i
+      if (params.stackMode === 'stack') stamp.position.z = i * totalZRise
+
+      for (const { geometry, material } of baseMeshes) {
+        stamp.add(new THREE.Mesh(geometry, material))
+      }
+      helixGroup.add(stamp)
+    }
+
+    updateCamera()
+  }
+
+  // ── Camera ────────────────────────────────────────────────────────────────────
+  function updateCamera() {
+    const totalH = params.stackMode === 'stack'
+      ? params.symmetry * totalZRise
+      : totalZRise
+    const safeH = totalH || 1
+
+    const camZ = params.cameraHeight * safeH
+    camera.position.set(params.cameraRadius, 0, camZ)
+
+    const lookDist = Math.max(safeH * 5, 1000)
+    const lookX    = params.cameraRadius + Math.cos(tiltAngle) * lookDist
+    const lookZ    = camZ + Math.sin(tiltAngle) * lookDist
+    camera.lookAt(lookX, 0, lookZ)
+    camera.updateProjectionMatrix()
+  }
+
+  // ── Mouse / touch tilt ────────────────────────────────────────────────────────
+  const cvs = renderer.domElement
+  cvs.addEventListener('mousedown',  e => { isDragging = true; lastDragY = e.clientY })
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return
+    tiltAngle -= (e.clientY - lastDragY) * 0.005
+    tiltAngle  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
+    lastDragY  = e.clientY
+    updateCamera()
+  })
+  window.addEventListener('mouseup',   () => { isDragging = false })
+  cvs.addEventListener('touchstart', e => { isDragging = true; lastDragY = e.touches[0].clientY }, { passive: true })
+  window.addEventListener('touchmove', e => {
+    if (!isDragging) return
+    tiltAngle -= (e.touches[0].clientY - lastDragY) * 0.005
+    tiltAngle  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, tiltAngle))
+    lastDragY  = e.touches[0].clientY
+    updateCamera()
+  }, { passive: true })
+  window.addEventListener('touchend', () => { isDragging = false })
+
+  // ── WebXR ─────────────────────────────────────────────────────────────────────
+  const xrButton = document.getElementById('xr-button')
+  if (navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+      if (supported) xrButton.disabled = false
+    }).catch(() => {})
+  }
+  xrButton.addEventListener('click', async () => {
+    if (renderer.xr.isPresenting) {
+      await renderer.xr.getSession().end()
+    } else {
+      try {
+        const session = await navigator.xr.requestSession('immersive-vr')
+        renderer.xr.setSession(session)
+      } catch (e) {
+        console.warn('WebXR session failed:', e)
+      }
+    }
+  })
+
+  // ── Apply directives to params ────────────────────────────────────────────────
+  function applyDirectives(d) {
+    if (d.depth          !== undefined) params.depth         = Math.min(5,   Math.max(1,    parseInt(d.depth)))
+    if (d.step           !== undefined) params.step          = Math.min(200, Math.max(10,   parseFloat(d.step)))
+    if (d.angle          !== undefined) params.angle         = Math.min(90,  Math.max(5,    parseFloat(d.angle)))
+    if (d.angle_minutes  !== undefined) params.angleMinutes  = Math.min(59,  Math.max(0,    parseFloat(d.angle_minutes)))
+    if (d.vertical_step  !== undefined) params.verticalStep  = Math.min(1.0, Math.max(0.0,  parseFloat(d.vertical_step)))
+    if (d.tube_radius    !== undefined) params.tubeRadius    = Math.min(0.5, Math.max(0.01, parseFloat(d.tube_radius)))
+    if (d.tube_segments  !== undefined) params.tubeSegments  = Math.min(12,  Math.max(3,    parseInt(d.tube_segments)))
+    if (d.symmetry       !== undefined) params.symmetry      = Math.max(1,                  parseInt(d.symmetry))
+    if (d.colour_speed   !== undefined) params.colourSpeed   = Math.min(16,  Math.max(0.25, parseFloat(d.colour_speed)))
+    if (d.saturation     !== undefined) params.saturation    = Math.min(100, Math.max(0,    parseFloat(d.saturation)))
+    if (d.lightness      !== undefined) params.lightness     = Math.min(100, Math.max(0,    parseFloat(d.lightness)))
+    if (d.background     !== undefined) params.background    = d.background
+    if (d.camera_height  !== undefined) params.cameraHeight  = Math.min(1.0, Math.max(0.0,  parseFloat(d.camera_height)))
+    if (d.camera_radius  !== undefined) params.cameraRadius  = Math.min(10,  Math.max(0.0,  parseFloat(d.camera_radius)))
+    if (d.rotation_speed !== undefined) params.rotationSpeed = Math.min(2.0, Math.max(0.0,  parseFloat(d.rotation_speed)))
+    if (d.stack_mode     !== undefined) params.stackMode     = d.stack_mode === 'reset' ? 'reset' : 'stack'
+  }
+
+  // ── Sync sliders → params ─────────────────────────────────────────────────────
+  function syncSlidersFromParams() {
+    document.getElementById('sl-depth').value          = params.depth
+    document.getElementById('sl-symmetry').value       = params.symmetry
+    document.getElementById('sl-stack-mode').value     = params.stackMode
+    document.getElementById('sl-step').value           = params.step
+    document.getElementById('sl-angle').value          = params.angle
+    document.getElementById('sl-angle-minutes').value  = params.angleMinutes
+    document.getElementById('sl-vertical-step').value  = params.verticalStep
+    document.getElementById('sl-tube-radius').value    = params.tubeRadius
+    document.getElementById('sl-tube-segments').value  = params.tubeSegments
+    document.getElementById('sl-colour-speed').value   = Math.log2(params.colourSpeed)
+    document.getElementById('sl-saturation').value     = params.saturation
+    document.getElementById('sl-lightness').value      = params.lightness
+    document.getElementById('sl-camera-height').value  = params.cameraHeight
+    document.getElementById('sl-camera-radius').value  = params.cameraRadius
+    document.getElementById('sl-rotation-speed').value = params.rotationSpeed
+    updateDisplayValues()
+  }
+
+  function updateDisplayValues() {
+    document.getElementById('val-depth').textContent          = params.depth
+    document.getElementById('val-symmetry').textContent       = params.symmetry
+    document.getElementById('val-step').textContent           = params.step
+    document.getElementById('val-angle').textContent          = params.angle + '°'
+    document.getElementById('val-angle-minutes').textContent  = params.angleMinutes + "'"
+    document.getElementById('val-vertical-step').textContent  = params.verticalStep.toFixed(2)
+    document.getElementById('val-tube-radius').textContent    = params.tubeRadius.toFixed(2)
+    document.getElementById('val-tube-segments').textContent  = params.tubeSegments
+    document.getElementById('val-colour-speed').textContent   = params.colourSpeed.toFixed(1) + '×'
+    document.getElementById('val-saturation').textContent     = params.saturation
+    document.getElementById('val-lightness').textContent      = params.lightness
+    document.getElementById('val-camera-height').textContent  = params.cameraHeight.toFixed(2)
+    document.getElementById('val-camera-radius').textContent  = params.cameraRadius.toFixed(1)
+    document.getElementById('val-rotation-speed').textContent = params.rotationSpeed.toFixed(1)
+  }
+
+  // ── Wire controls ─────────────────────────────────────────────────────────────
+  function wire(id, event, onChange) {
+    document.getElementById(id).addEventListener(event, function() { onChange(this.value) })
+  }
+
+  // Full re-render: range sliders use 'input', selects use 'change'
+  wire('sl-depth',         'change', v => { params.depth        = parseInt(v);                runRender() })
+  wire('sl-symmetry',      'change', v => { params.symmetry     = parseInt(v);                runRender() })
+  wire('sl-stack-mode',    'change', v => { params.stackMode    = v;                           runRender() })
+  wire('sl-tube-segments', 'change', v => { params.tubeSegments = parseInt(v);                runRender() })
+  wire('sl-step',          'input',  v => { params.step         = parseFloat(v);              runRender() })
+  wire('sl-angle',         'input',  v => { params.angle        = parseFloat(v);              runRender() })
+  wire('sl-angle-minutes', 'input',  v => { params.angleMinutes = parseFloat(v);              runRender() })
+  wire('sl-vertical-step', 'input',  v => { params.verticalStep = parseFloat(v);              runRender() })
+  wire('sl-tube-radius',   'input',  v => { params.tubeRadius   = parseFloat(v);              runRender() })
+  wire('sl-colour-speed',  'input',  v => { params.colourSpeed  = Math.pow(2, parseFloat(v)); runRender() })
+  wire('sl-saturation',    'input',  v => { params.saturation   = parseFloat(v);              runRender() })
+  wire('sl-lightness',     'input',  v => { params.lightness    = parseFloat(v);              runRender() })
+
+  // Camera-only controls (no geometry rebuild needed)
+  wire('sl-camera-height', 'input', v => { params.cameraHeight  = parseFloat(v); updateDisplayValues(); updateCamera() })
+  wire('sl-camera-radius', 'input', v => { params.cameraRadius  = parseFloat(v); updateDisplayValues(); updateCamera() })
+
+  // Rotation speed is read live by the animation loop — no rebuild needed
+  wire('sl-rotation-speed', 'input', v => { params.rotationSpeed = parseFloat(v); updateDisplayValues() })
+
+  // ── Full render pipeline ──────────────────────────────────────────────────────
+  // Always re-runs the L-system so depth changes take effect immediately.
+  function runRender() {
+    if (!storedScore) return
+    updateDisplayValues()
+    scene.background = new THREE.Color(params.background)
+    const parsed = parseScore(storedScore)
+    if (!parsed.axiom) return
+    try {
+      const lsys = new LSystem({ axiom: parsed.axiom, productions: parsed.productions })
+      lsys.iterate(params.depth)
+      lsystemString = lsys.getString()
+      if (!lsystemString) return
+      buildHelix()
+    } catch (e) {
+      postError('L-system error: ' + e.message)
+    }
+  }
+
+  // ── BD_INIT handler ───────────────────────────────────────────────────────────
+  function handleInit(text) {
+    try {
+      const d = parseBD(text)
+
+      if (!d.score) {
+        postError('No score found in node text')
+        return
+      }
+
+      const parsed = parseScore(d.score)
+      if (!parsed.axiom) {
+        postError('No axiom found in score')
+        return
+      }
+
+      storedScore = d.score
+      applyDirectives(d)
+      syncSlidersFromParams()
+      scene.background = new THREE.Color(params.background)
+
+      statusEl.textContent = 'Running L-system…'
+
+      const lsys = new LSystem({ axiom: parsed.axiom, productions: parsed.productions })
+      lsys.iterate(params.depth)
+      lsystemString = lsys.getString()
+
+      if (!lsystemString) {
+        postError('L-system produced no output')
+        return
+      }
+
+      statusEl.textContent = 'Rendering…'
+      buildHelix()
+      statusEl.textContent = 'Ready'
+    } catch (e) {
+      postError('Render error: ' + e.message)
+    }
+  }
+
+  // ── BD_UPDATE payload builder ─────────────────────────────────────────────────
+  function buildUpdatedText() {
+    const cs = Number.isInteger(params.colourSpeed)
+      ? params.colourSpeed
+      : params.colourSpeed.toFixed(4)
+    return [
+      '%%bd_module helix_module.html',
+      `%%bd_depth ${params.depth}`,
+      `%%bd_step ${params.step}`,
+      `%%bd_angle ${params.angle}`,
+      `%%bd_angle_minutes ${params.angleMinutes}`,
+      `%%bd_vertical_step ${params.verticalStep.toFixed(3)}`,
+      `%%bd_tube_radius ${params.tubeRadius.toFixed(3)}`,
+      `%%bd_tube_segments ${params.tubeSegments}`,
+      `%%bd_symmetry ${params.symmetry}`,
+      `%%bd_colour_speed ${cs}`,
+      `%%bd_saturation ${params.saturation}`,
+      `%%bd_lightness ${params.lightness}`,
+      `%%bd_background ${params.background}`,
+      `%%bd_camera_height ${params.cameraHeight.toFixed(2)}`,
+      `%%bd_camera_radius ${params.cameraRadius.toFixed(1)}`,
+      `%%bd_rotation_speed ${params.rotationSpeed.toFixed(1)}`,
+      `%%bd_stack_mode ${params.stackMode}`,
+      storedScore ? `%%bd_score [\n${storedScore}\n%%bd_]` : ''
+    ].filter(Boolean).join('\n')
+  }
+
+  // ── Error helper ──────────────────────────────────────────────────────────────
+  function postError(msg) {
+    statusEl.textContent = 'Error: ' + msg
+    window.parent.postMessage({ type: 'BD_ERROR', payload: { message: msg } }, '*')
+  }
+
+  // ── postMessage protocol ──────────────────────────────────────────────────────
+  window.addEventListener('message', e => {
+    try {
+      const msg = e.data
+      if (!msg || !msg.type) return
+      switch (msg.type) {
+        case 'BD_INIT':
+          handleInit(msg.payload && msg.payload.text || '')
+          break
+        case 'BD_STOP':
+          clearHelixGroup()
+          lsystemString = ''
+          statusEl.textContent = 'Stopped'
+          break
+        case 'BD_REQUEST_UPDATE':
+          window.parent.postMessage(
+            { type: 'BD_UPDATE', payload: { text: buildUpdatedText() } },
+            '*'
+          )
+          break
+      }
+    } catch (err) {
+      postError('Protocol error: ' + err.message)
+    }
+  })
+
+  // ── Post BD_READY on load ─────────────────────────────────────────────────────
+  window.parent.postMessage({ type: 'BD_READY' }, '*')
+  statusEl.textContent = 'Ready'
+  updateCamera()
+  </script>
+</body>
+</html>
