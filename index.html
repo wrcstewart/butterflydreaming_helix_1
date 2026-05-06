@@ -84,6 +84,8 @@
       cursor: pointer;
     }
     button:hover { background: rgba(74,155,142,0.1); }
+    #btn-copy-link { color: #4d8fff; border-color: #4d8fff; }
+    #btn-copy-link:hover { background: rgba(77,143,255,0.12); }
 
     .status {
       margin-top: 9px;
@@ -161,9 +163,8 @@ F: F+F-F-F+F+F+F-F
     const iframe    = document.getElementById('helix-module')
     const statusEl  = document.getElementById('status')
 
-    // 1. URL param check runs first, before any default is applied
-    const urlParams   = new URLSearchParams(window.location.search)
-    const scriptParam = urlParams.get('script')
+    // 1. URL param check — must run before default is applied and before autoload
+    const scriptParam = new URLSearchParams(window.location.search).get('script')
     if (scriptParam) {
       try {
         textarea.value = decodeURIComponent(escape(atob(scriptParam)))
@@ -174,7 +175,7 @@ F: F+F-F-F+F+F+F-F
       textarea.value = DEFAULT_SCRIPT
     }
 
-    // 2. Auto-send BD_INIT after module initialises
+    // 2. Auto-send BD_INIT — uses whatever is now in the textarea
     setTimeout(sendToPlayer, 500)
 
     function sendToPlayer() {
